@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>智能驾驶整车测试数据自动化入门指南</title>
+<style>
+:root{--bg:#f6f8fa;--paper:#fff;--ink:#24292f;--muted:#57606a;--line:#d0d7de;--code:#f6f8fa;--accent:#0969da}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC",Arial,sans-serif;font-size:16px;line-height:1.75}main{max-width:960px;margin:0 auto;padding:42px 24px 64px}article{background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:38px 48px 54px;box-shadow:0 1px 3px rgba(31,35,40,.04)}h1,h2,h3{line-height:1.3;font-weight:650;margin:1.5em 0 .65em}h1{font-size:32px;margin-top:0;padding-bottom:.45em;border-bottom:1px solid var(--line)}h2{font-size:24px;padding-bottom:.3em;border-bottom:1px solid var(--line)}h3{font-size:19px}p{margin:.8em 0}strong{font-weight:700}blockquote{margin:1.1em 0;padding:10px 18px;color:#3b434b;background:#f6f8fa;border-left:4px solid var(--accent);border-radius:4px}table{display:block;overflow-x:auto;width:100%;border-collapse:collapse;margin:1em 0 1.2em;font-size:14px}th,td{padding:9px 12px;border:1px solid var(--line);text-align:left;vertical-align:top}th{font-weight:650;background:#f6f8fa}code{padding:.15em .35em;font:.9em/1.4 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;background:var(--code);border-radius:4px}pre{overflow:auto;margin:1em 0;padding:16px 18px;background:#f6f8fa;border:1px solid #e6e8eb;border-radius:7px;line-height:1.55}pre code{padding:0;background:transparent;font-size:14px}ul,ol{padding-left:1.7em}li{margin:.28em 0}a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}.lead{font-size:17px}.note{color:var(--muted)}@media print{body{background:#fff}main{max-width:none;padding:0}article{border:0;box-shadow:none;padding:0}a{color:#0969da;text-decoration:underline}}
+</style>
+</head>
+<body><main><article>
+<h1>智能驾驶（整车）测试中的数据自动化处理：入门指南</h1>
+<p class="lead">本文从“一辆测试车跑完一趟路后，数据如何自动变成测试结论”的角度，白话说明智能驾驶整车测试的数据、工具、脚本和实现流程。</p>
+<blockquote><strong>一句话先记住：</strong>智能驾驶测试里的自动化数据处理，不是简单写一个脚本读 Excel；它通常是一条数据流水线：<strong>采集 → 上传 → 解析 → 对时/校验 → 场景切片 → 算指标 → 自动判定 → 出报告 → 回归对比</strong>。</blockquote>
+
+<h2>一、智能驾驶整车测试，到底在测什么？</h2>
+<p>以搭载辅助驾驶/自动驾驶功能的整车为例，测试对象不只是“车能不能开”，而是整套闭环：</p>
+<pre><code>外界道路环境
+   ↓
+传感器感知
+   ↓
+算法识别、融合、定位、预测
+   ↓
+规划决策
+   ↓
+车辆控制（转向、制动、加速）
+   ↓
+车辆实际运动</code></pre>
+<p>例如测试“前车突然减速时，车辆能否自动刹车”，实际会关心：</p>
+<ol><li>摄像头、雷达是否看到了前车；</li><li>感知算法是否正确识别前车；</li><li>算法是否判断出碰撞风险；</li><li>规划模块是否决定制动；</li><li>控制模块是否及时下发制动请求；</li><li>制动系统是否真正建立制动力；</li><li>车辆是否避免碰撞；</li><li>整个过程是否平顺、舒适、没有误刹。</li></ol>
+<p>因此，整车智能驾驶测试数据会非常多，而且来自不同设备。</p>
+
+<h2>二、测试车通常采集哪些数据？</h2>
+<p>可以把测试车理解成一个“移动数据中心”。一次道路测试，常见会收集下面几大类数据。</p>
+<h3>1. 环境传感器数据</h3>
+<p>这是车“看见外界”的原始数据。</p>
+<table><thead><tr><th>数据来源</th><th>主要内容</th><th>常见用途</th></tr></thead><tbody>
+<tr><td>摄像头</td><td>前视、环视、侧视、后视视频或图片</td><td>车道线、车辆、行人、交通灯、障碍物识别</td></tr>
+<tr><td>毫米波雷达</td><td>目标距离、速度、角度、雷达点迹/目标列表</td><td>前车跟踪、雨雾等复杂环境下的探测</td></tr>
+<tr><td>激光雷达</td><td>三维点云</td><td>三维障碍物、空间结构、定位、障碍物距离</td></tr>
+<tr><td>超声波雷达</td><td>近距离障碍物数据</td><td>泊车、低速防碰撞</td></tr>
+<tr><td>GNSS/RTK</td><td>高精定位信息</td><td>车辆真实位置、速度、轨迹评估</td></tr>
+<tr><td>IMU</td><td>加速度、角速度、姿态</td><td>定位融合、急加速/急刹/转向分析</td></tr>
+</tbody></table>
+<p>其中：</p><ul><li><strong>GNSS</strong> 是卫星定位；</li><li><strong>RTK</strong> 是比普通 GPS 精度更高的定位方式，常可做到厘米级；</li><li><strong>IMU</strong> 可以理解成测量车辆“怎么动”的惯性器件。</li></ul>
+
+<h3>2. 车端总线和控制数据</h3>
+<p>这部分主要反映：<strong>车想干什么、车实际做了什么。</strong></p>
+<table><thead><tr><th>数据类型</th><th>举例</th></tr></thead><tbody>
+<tr><td>CAN / CAN FD</td><td>车速、方向盘角度、制动压力、档位、车门状态、转向灯状态</td></tr>
+<tr><td>以太网数据</td><td>摄像头、域控制器、高带宽传感器和算法模块通信</td></tr>
+<tr><td>FlexRay / LIN</td><td>部分车型中的底盘或低速控制通信</td></tr>
+<tr><td>ECU / 域控制器日志</td><td>软件错误、异常、运行状态、算法调试信息</td></tr>
+<tr><td>控制指令</td><td>目标加速度、目标转角、制动请求、换道请求</td></tr>
+<tr><td>执行反馈</td><td>实际转角、实际加速度、制动压力、横摆角速度等</td></tr>
+</tbody></table>
+<p>例如，自动紧急制动（AEB）测试中，常常要对比：</p>
+<pre><code>算法请求制动的时刻
+        ↓
+控制器下发制动的时刻
+        ↓
+制动压力实际建立的时刻
+        ↓
+车辆速度真正下降的时刻</code></pre>
+<p>这几条曲线之间的时间差，就是重要测试指标。</p>
+
+<h3>3. 算法中间结果</h3>
+<p>原始视频和 CAN 信号只是“输入”和“车辆反馈”。智能驾驶测试还要看算法内部做出了什么判断。</p>
+<table><thead><tr><th>模块</th><th>常见输出</th></tr></thead><tbody>
+<tr><td>感知</td><td>目标类别、目标位置、速度、置信度、车道线、红绿灯状态</td></tr>
+<tr><td>融合</td><td>多传感器融合目标、跟踪 ID</td></tr>
+<tr><td>定位</td><td>车辆坐标、姿态、定位置信度</td></tr>
+<tr><td>预测</td><td>周围车辆/行人的未来轨迹</td></tr>
+<tr><td>规划</td><td>本车未来轨迹、目标车道、期望速度、决策状态</td></tr>
+<tr><td>控制</td><td>期望方向盘角度、目标加速度、制动/加速指令</td></tr>
+<tr><td>功能状态机</td><td>ACC 是否激活、AEB 是否触发、LCC 是否可用、NOA 是否在执行变道等</td></tr>
+</tbody></table>
+<blockquote>只看“最后撞没撞”不够。一旦测试失败，需要根据这些中间数据判断问题发生在感知、决策、控制，还是车辆执行层。</blockquote>
+
+<h3>4. 地图、道路与真值数据</h3>
+<p>为了判断算法“到底对不对”，还需要一个比较可信的参考答案，行业里常叫 <strong>Ground Truth（真值）</strong>。</p>
+<ul><li>高精地图中的车道线、道路拓扑、限速信息；</li><li>RTK/组合导航得到的高精本车轨迹；</li><li>目标车上安装的高精定位设备；</li><li>人工标注出的车辆、行人、车道线；</li><li>专业目标测量系统输出的相对距离和相对速度。</li></ul>
+<pre><code>算法认为：前车距离 20.2 米，速度 40 km/h
+真值系统测得：前车距离 19.8 米，速度 41 km/h
+
+距离误差 = 0.4 米
+速度误差 = 1 km/h</code></pre>
+<p>然后就可根据门限判断功能是否达标。</p>
+
+<h2>三、这些数据一般长什么样？</h2>
+<table><thead><tr><th>类型</th><th>常见格式</th><th>说明</th></tr></thead><tbody>
+<tr><td>视频</td><td><code>.mp4</code>、<code>.avi</code>、<code>.h264</code>、<code>.h265</code></td><td>摄像头录制内容</td></tr>
+<tr><td>图片</td><td><code>.jpg</code>、<code>.png</code></td><td>单帧图像、截图、标注图</td></tr>
+<tr><td>点云</td><td><code>.pcd</code>、<code>.bin</code>、<code>.las</code></td><td>激光雷达三维点云</td></tr>
+<tr><td>车载总线日志</td><td><code>.asc</code>、<code>.blf</code>、<code>.mf4</code>、<code>.dbc</code></td><td>CAN/CAN FD 信号及定义</td></tr>
+<tr><td>网络报文</td><td><code>.pcap</code>、<code>.pcapng</code></td><td>以太网抓包</td></tr>
+<tr><td>机器人/算法消息包</td><td><code>.bag</code>、<code>.mcap</code></td><td>常用于按时间记录多路消息</td></tr>
+<tr><td>定位轨迹</td><td><code>.csv</code>、<code>.json</code>、<code>.kml</code></td><td>经纬度、姿态、速度等</td></tr>
+<tr><td>算法日志</td><td><code>.log</code>、<code>.txt</code>、<code>.json</code>、<code>.protobuf</code></td><td>程序运行日志及结构化输出</td></tr>
+<tr><td>测试配置</td><td><code>.yaml</code>、<code>.json</code>、<code>.xml</code></td><td>车型、版本、场景、阈值、测试配置</td></tr>
+</tbody></table>
+<ul><li><code>.dbc</code>：CAN 报文“字典”，告诉工具每个字节/位代表什么物理信号；</li><li><code>.mf4</code>：常见的测量数据格式，属于 MDF 4；</li><li><code>.bag</code>：ROS 生态中常见的时序消息记录格式；</li><li><code>.mcap</code>：较新的机器人数据记录格式，设计目标之一是更高效地承载多种消息数据。</li></ul>
+
+<h2>四、自动化处理数据的完整流程</h2>
+<pre><code>测试车采集数据
+    ↓
+数据落盘（车载 SSD / 工控机）
+    ↓
+回库或网络上传到服务器/云存储
+    ↓
+自动校验文件是否完整、版本是否匹配
+    ↓
+解析各种格式，统一时间轴和信号名称
+    ↓
+从海量数据中筛选、切分目标场景
+    ↓
+调用算法或读取算法输出，计算评价指标
+    ↓
+按照规则自动判定 Pass / Fail / Review
+    ↓
+生成图表、视频回放、测试报告和问题单
+    ↓
+新版本重复跑同一批数据，做回归对比</code></pre>
+
+<h3>第 1 步：采集和落盘</h3>
+<p>车辆跑测试时，通常会由车载工控机或数据采集系统同时记录：</p>
+<ul><li>多路摄像头视频；</li><li>雷达和激光雷达数据；</li><li>CAN/CAN FD 信号；</li><li>定位、IMU；</li><li>域控制器/算法日志；</li><li>当前软件版本、地图版本、车辆 VIN、测试任务信息。</li></ul>
+<p>一个很关键的问题是：<strong>时间同步</strong>。</p>
+<pre><code>摄像头在 10:00:01.100 拍到前车刹车
+雷达在   10:00:01.120 探测到目标减速
+算法在   10:00:01.180 做出制动决策
+CAN 信号在10:00:01.250 显示制动压力上升</code></pre>
+<p>如果设备时间不准，就无法准确判断系统到底慢了多少。所以整车测试会非常重视：GNSS 授时、PTP（精密时间协议）、统一时钟源、时间戳精度与多传感器对时。</p>
+
+<h3>第 2 步：上传、登记与自动校验</h3>
+<p>一趟测试可能产生几十 GB，甚至数 TB 数据。通常不能靠人工一个个拷贝、命名和检查。</p>
+<pre><code>1. 检查视频、CAN、雷达、定位文件是否齐全
+2. 检查文件是否损坏
+3. 检查每个文件的时间范围是否连续
+4. 检查该数据属于哪辆车、哪个版本、哪位测试人员
+5. 写入数据库，生成一条“测试任务记录”
+6. 上传到 NAS、对象存储或云端数据湖</code></pre>
+<p>常见元数据包括：</p>
+<pre><code>{
+  "vehicle_id": "TEST-CAR-012",
+  "software_version": "AD-2.6.1",
+  "map_version": "HDMAP-2026.10",
+  "test_date": "2026-10-15",
+  "route": "城市快速路-A线",
+  "weather": "小雨",
+  "data_start_time": "2026-10-15T09:30:00",
+  "data_end_time": "2026-10-15T10:45:00"
+}</code></pre>
+<p>这类信息不是“附属品”，而是后续定位问题、筛选场景、比较版本的基础。</p>
+
+<h3>第 3 步：解析不同格式，统一成可分析的数据</h3>
+<p>原始数据格式五花八门，不能直接混在一起分析。自动化脚本的重要作用，就是把它们转成统一的分析结构，例如时间序列表：</p>
+<table><thead><tr><th>时间戳</th><th>车速</th><th>目标距离</th><th>目标相对速度</th><th>AEB 状态</th><th>制动请求</th><th>制动压力</th></tr></thead><tbody>
+<tr><td>10:00:01.000</td><td>60</td><td>35.2</td><td>-4.0</td><td>未触发</td><td>0</td><td>0</td></tr>
+<tr><td>10:00:01.100</td><td>60</td><td>34.5</td><td>-8.0</td><td>未触发</td><td>0</td><td>0</td></tr>
+<tr><td>10:00:01.200</td><td>59.8</td><td>33.6</td><td>-12.0</td><td>触发</td><td>-3.0</td><td>0</td></tr>
+<tr><td>10:00:01.350</td><td>58.5</td><td>31.8</td><td>-15.0</td><td>触发</td><td>-5.0</td><td>20</td></tr>
+</tbody></table>
+<p>核心工作包括：</p><ul><li><strong>解码</strong>：把 CAN 原始报文翻译成车速、制动压力等物理量；</li><li><strong>解析</strong>：读取日志、算法输出、定位文件；</li><li><strong>对时</strong>：把不同数据源放到同一条时间轴；</li><li><strong>重采样/插值</strong>：统一采样频率；</li><li><strong>坐标转换</strong>：统一车辆坐标、世界坐标、地图坐标；</li><li><strong>清洗</strong>：处理丢帧、异常值、缺失值和重复记录。</li></ul>
+
+<h2>五、自动化脚本具体会怎么写？</h2>
+<p>现实中通常不是“一个超大脚本”，而是一组小工具/服务组合成平台。最常见的是 <strong>Python</strong>，因为它处理数据快、库多、写起来相对容易。</p>
+<table><thead><tr><th>工作</th><th>常用语言/工具</th></tr></thead><tbody>
+<tr><td>数据解析、指标计算、报告生成</td><td>Python</td></tr><tr><td>高性能算法、底层解析、车端程序</td><td>C++</td></tr><tr><td>数据库查询、数据统计</td><td>SQL</td></tr><tr><td>Web 测试平台页面</td><td>JavaScript / TypeScript、Java、Python 等</td></tr><tr><td>容器化部署</td><td>Docker</td></tr><tr><td>批量任务调度</td><td>Airflow、Kubernetes、Jenkins、GitLab CI 等</td></tr><tr><td>版本控制</td><td>Git / GitHub、GitLab、Gitee 等</td></tr><tr><td>日志查询和监控</td><td>ELK、Grafana、Prometheus 等</td></tr>
+</tbody></table>
+<p>在个人电脑上入门时，常见组合是：</p>
+<pre><code>Python + VS Code 或 PyCharm
+      + Git
+      + Jupyter Notebook
+      + pandas / NumPy / Matplotlib</code></pre>
+<h3>一个非常简化的 Python 思路</h3>
+<p>例如，测试 AEB 触发是否及时。你已经把数据解析成一个 CSV：</p>
+<pre><code>timestamp,ego_speed_kph,front_distance_m,relative_speed_kph,aeb_active,brake_pressure_bar
+0.00,60,40.0,-10,0,0
+0.10,60,38.5,-15,0,0
+0.20,59.9,36.7,-20,1,0
+0.35,58.8,33.0,-25,1,18</code></pre>
+<p>脚本的思路大致是：</p>
+<pre><code>import pandas as pd
+
+data = pd.read_csv("aeb_case_001.csv")
+
+# 找到系统第一次进入 AEB 激活状态的时刻
+aeb_rows = data[data["aeb_active"] == 1]
+
+if aeb_rows.empty:
+    result = "FAIL：未触发 AEB"
+else:
+    trigger_time = aeb_rows.iloc[0]["timestamp"]
+    trigger_distance = aeb_rows.iloc[0]["front_distance_m"]
+
+    # 示例规则：距离小于 40 m 时，必须在 0.5 秒内触发
+    if trigger_time &lt;= 0.5 and trigger_distance &gt; 0:
+        result = "PASS"
+    else:
+        result = "FAIL：AEB 触发过晚"
+
+print(result)</code></pre>
+<p>真实项目当然会复杂很多，还会考虑目标是否真的是同车道前车、前车是否确实减速、自车状态是否允许 AEB、弯道/坡道/遮挡/切入车辆、TTC、是否误触发、制动减速度、是否碰撞、驾驶员干预和数据有效性等。</p>
+<blockquote><strong>本质：</strong>把“测试要求”翻译成可计算的条件，再让程序在数据里找证据。</blockquote>
+
+<h2>六、什么叫“场景切片”？为什么它很重要？</h2>
+<p>一辆车跑 2 小时，可能录了几百万条 CAN 信号、几万帧视频、海量点云；但你真正关心的，可能只是十几秒的“前车突然切入”片段。</p>
+<p>自动化会根据触发条件，把长数据切成一个个“场景片段”，这就叫<strong>场景挖掘</strong>、<strong>场景切片</strong>或 <strong>Scenario Mining</strong>。</p>
+<pre><code>当以下条件同时成立时，截取一个“切入场景”：
+
+1. 相邻车道目标横向距离快速向本车道靠近；
+2. 该目标横向速度超过一定阈值；
+3. 目标随后进入本车道；
+4. 本车 ACC 或车道居中功能处于激活状态；
+5. 截取触发前 10 秒、触发后 15 秒数据。</code></pre>
+<p>输出可能是：</p>
+<pre><code>2026-10-15 路测数据：
+- 检出“前车切入”场景：36 个
+- 其中 ACC 正确减速：31 个
+- 存在舒适性问题：3 个
+- 需要人工复核：2 个</code></pre>
+<blockquote>自动化最大的价值，是从 TB 级数据中快速找出有价值的几秒钟。</blockquote>
+
+<h2>七、整车智能驾驶常自动算哪些指标？</h2>
+<h3>1. AEB：自动紧急制动</h3><ul><li>是否识别目标；</li><li>是否触发 AEB；</li><li>触发时刻、TTC（预计碰撞时间）；</li><li>制动建立延迟、最大减速度；</li><li>最终是否碰撞、碰撞时相对速度；</li><li>是否误制动；</li><li>制动过程是否过于突兀。</li></ul>
+<h3>2. ACC：自适应巡航</h3><ul><li>是否正确识别前车；</li><li>跟车距离是否保持在设定范围；</li><li>加减速是否平顺；</li><li>前车切入/切出后能否正确响应；</li><li>前车刹停后是否跟停、前车起步后是否正确跟随；</li><li>是否出现不合理急刹、急加速或频繁丢失目标。</li></ul>
+<p>常见计算指标：车间时距、相对速度、跟车距离误差、加速度、加加速度（Jerk，反映突兀程度）。</p>
+<h3>3. LCC / LKA：车道居中或车道保持</h3><ul><li>是否识别左右车道线；</li><li>横向偏差是否在允许范围；</li><li>弯道中是否仍能居中；</li><li>车道线模糊、缺失时是否合理退出；</li><li>是否压线、偏离车道；</li><li>转向是否频繁来回修正。</li></ul>
+<pre><code>横向偏差：车辆中心偏离车道中心多少米
+航向角误差：车辆朝向与车道方向差多少度
+横向加速度：转弯时是否过猛
+方向盘角速度：转向动作是否突兀</code></pre>
+<h3>4. 自动变道 / NOA</h3><ul><li>变道条件是否满足；</li><li>是否漏看后方来车；</li><li>是否正确判断周围空隙；</li><li>是否打转向灯；</li><li>变道时间和轨迹是否合理、平顺；</li><li>是否压线、中途放弃或在禁变道区域违规变道；</li><li>退出匝道、汇入主路是否正确。</li></ul>
+<h3>5. 泊车功能</h3><ul><li>能否找到车位；</li><li>车位线/车位类型识别是否正确；</li><li>是否规划出可行轨迹；</li><li>是否与障碍物保持安全距离；</li><li>是否完成泊入，最终停车位置是否合格；</li><li>是否发生剐蹭、碰撞或过度靠近。</li></ul>
+
+<h2>八、自动判定不能完全代替人工</h2>
+<p>自动化特别适合判断：</p><ul><li>某信号有没有出现；</li><li>信号是否超过阈值；</li><li>是否在规定时间内响应；</li><li>距离、速度、偏差、延迟是否合格；</li><li>两个版本的指标有没有变差；</li><li>是否出现碰撞、压线、超速等明确定义的问题。</li></ul>
+<p>但以下问题通常需要人工复核：</p><ul><li>视频中目标到底是不是“行人”；</li><li>车辆减速虽符合阈值，但驾驶体验是否明显不自然；</li><li>算法行为是否符合复杂交通规则或业务意图；</li><li>道路施工、临时标志、交警手势等长尾场景；</li><li>数据或真值是否可信。</li></ul>
+<pre><code>自动筛选全部数据
+   ↓
+自动计算指标、标红风险片段
+   ↓
+测试工程师查看视频、轨迹和信号曲线
+   ↓
+确认问题
+   ↓
+提交缺陷、跟踪修复、回归验证</code></pre>
+<blockquote>自动化不是让测试工程师“不看数据”，而是让工程师不用把时间浪费在大量正常数据上。</blockquote>
+
+<h2>九、仿真测试、台架测试和实车路测的自动化有什么区别？</h2>
+<table><thead><tr><th>测试层级</th><th>在哪里测</th><th>主要目的</th></tr></thead><tbody>
+<tr><td>MIL</td><td>模型在环</td><td>验证控制/算法模型逻辑</td></tr><tr><td>SIL</td><td>软件在环</td><td>在电脑上运行真实或接近真实的软件</td></tr><tr><td>HIL</td><td>硬件在环</td><td>使用真实 ECU，通过仿真输入测试</td></tr><tr><td>VIL</td><td>车辆在环</td><td>部分真实车辆、部分虚拟环境</td></tr><tr><td>封闭场地实车测试</td><td>试验场</td><td>可控验证高风险场景</td></tr><tr><td>开放道路路测</td><td>真实道路</td><td>验证真实交通和复杂长尾场景</td></tr>
+</tbody></table>
+<h3>仿真测试的自动化</h3>
+<p>仿真中不需要真的跑车，可以批量生成大量场景：</p>
+<pre><code>场景参数：
+- 自车速度：40 / 60 / 80 km/h
+- 前车速度：0 / 20 / 40 km/h
+- 初始距离：10 / 20 / 30 / 50 m
+- 路面：干燥 / 湿滑
+- 光照：白天 / 夜晚 / 逆光
+- 天气：晴天 / 雨天 / 雾天</code></pre>
+<p>程序将参数排列组合，自动运行成千上万次，再统计：</p>
+<pre><code>总场景：10,000
+通过：9,920
+失败：45
+需人工复核：35</code></pre>
+<p>常见公开/开源生态：</p><ul><li><a href="https://github.com/carla-simulator/carla">CARLA</a>：开源自动驾驶仿真平台，提供 Python API，适合创建车辆、交通参与者、传感器和场景；</li><li><a href="https://github.com/ApolloAuto/apollo">Apollo</a>：开源自动驾驶软件栈，包含感知、规划、控制、仿真等相关能力；</li><li><a href="https://www.asam.net/standards/detail/openscenario-xml/">OpenSCENARIO</a>：描述驾驶场景、角色和行为的行业标准；</li><li><a href="https://www.asam.net/standards/detail/opendrive/">OpenDRIVE</a>：描述道路网络和道路几何信息的行业标准；</li><li><a href="https://mcap.dev/">MCAP</a>：面向机器人等时序消息数据的记录格式和生态。</li></ul>
+<pre><code>OpenDRIVE：这条路长什么样
+OpenSCENARIO：谁在这条路上，什么时候做什么动作
+仿真器：让这些车、人、道路、天气真正跑起来
+自动化脚本：批量运行、计算结果、判定通过或失败</code></pre>
+
+<h2>十、一个真实项目中，自动化平台大概长什么样？</h2>
+<pre><code>           ┌──────────────────────┐
+           │ 测试车 / 仿真平台    │
+           │ 视频、CAN、雷达、日志│
+           └──────────┬───────────┘
+                      ↓
+           ┌──────────────────────┐
+           │ 数据上传与元数据登记 │
+           │ 车辆/版本/时间/路线  │
+           └──────────┬───────────┘
+                      ↓
+           ┌──────────────────────┐
+           │ 数据湖 / 文件存储    │
+           │ NAS、对象存储、云端  │
+           └──────────┬───────────┘
+                      ↓
+           ┌──────────────────────┐
+           │ 数据处理任务集群     │
+           │ 解析、对时、切片     │
+           └──────────┬───────────┘
+                      ↓
+           ┌──────────────────────┐
+           │ 指标计算与规则引擎   │
+           │ TTC、距离、延迟、偏差│
+           └──────────┬───────────┘
+                      ↓
+           ┌──────────────────────┐
+           │ 测试报告 / 可视化平台│
+           │ 视频回放、曲线、问题 │
+           └──────────────────────┘</code></pre>
+<p>测试工程师日常可能是在平台上做这些事：</p>
+<ol><li>选择测试功能，例如 AEB 或 ACC；</li><li>选择软件版本、车辆、路线或数据集；</li><li>选择自动化测试用例；</li><li>点击执行；</li><li>等待平台批量跑脚本；</li><li>查看通过率、失败场景；</li><li>点开失败记录，看视频、轨迹、CAN 曲线；</li><li>创建 Bug；</li><li>新版本出来后，对同一批数据再次执行；</li><li>比较新旧版本结果。</li></ol>
+
+<h2>十一、刚入门应该重点学习什么？</h2>
+<h3>第一阶段：车辆和测试基础</h3>
+<ul><li>ADAS、智能驾驶功能基本概念；</li><li>ACC、AEB、LKA/LCC、BSD、DOW、APA、NOA 等功能；</li><li>车辆纵向控制与横向控制；</li><li>CAN、CAN FD、DBC 的基本概念；</li><li>软件测试基础：测试用例、缺陷、回归、边界值、场景法。</li></ul>
+<p>你不必一开始就懂复杂算法，但一定要能回答：这个功能在什么条件下该触发？不该触发时为什么不能触发？功能正确与否应该看什么数据？</p>
+<h3>第二阶段：学习 Python 数据处理</h3>
+<pre><code>Python 基础
+→ CSV / JSON 文件读取
+→ pandas 表格数据处理
+→ NumPy 数值计算
+→ Matplotlib / Plotly 画曲线
+→ 异常处理、日志记录
+→ 单元测试
+→ Git</code></pre>
+<p>例如你要能用 Python 完成：</p><ul><li>读取 CAN 解码后的 CSV；</li><li>按时间段筛选数据；</li><li>求最大值、最小值、平均值；</li><li>找到信号第一次触发的时间；</li><li>计算两个事件的时间差；</li><li>判断是否超过阈值；</li><li>生成 Excel/HTML/PDF 报告；</li><li>画出车速、制动压力、目标距离的时间曲线。</li></ul>
+<h3>第三阶段：了解车辆数据和工具</h3>
+<table><thead><tr><th>类别</th><th>常见工具/技术</th></tr></thead><tbody>
+<tr><td>CAN 分析</td><td>CANoe、CANalyzer、CANape、Wireshark</td></tr><tr><td>总线数据库</td><td>DBC、ARXML</td></tr><tr><td>接口测试</td><td>CANoe、Python、SOME/IP、DoIP、UDS</td></tr><tr><td>数据分析</td><td>Python、Jupyter、pandas、SQL</td></tr><tr><td>自动化任务</td><td>Jenkins、GitLab CI、Docker</td></tr><tr><td>仿真</td><td>CARLA、PreScan、CarMaker、CarSim、VTD、dSPACE 等</td></tr><tr><td>数据可视化</td><td>Grafana、Kibana、Plotly、内部回放平台</td></tr><tr><td>缺陷与测试管理</td><td>Jira、禅道、TestRail、内部平台</td></tr>
+</tbody></table>
+<p>商业工具的选择会随公司而变，但 <strong>Python + CAN 基础 + 数据分析能力</strong> 的通用性最强。</p>
+
+<h2>十二、一个最实用的入门练习</h2>
+<p>假设你要做一个“小型 ACC 测试数据分析器”。准备一份 CSV：</p>
+<pre><code>time_s,ego_speed_kph,lead_distance_m,relative_speed_kph,acc_active
+0.0,60,45,-2,1
+0.1,60,44.8,-2,1
+0.2,59.8,44.4,-4,1
+...</code></pre>
+<p>你的第一个自动化测试脚本可以验证：</p>
+<ol><li>ACC 是否处于激活状态；</li><li>前车存在时，跟车距离是否低于安全阈值；</li><li>相对速度明显变小时，自车是否开始减速；</li><li>是否有明显急刹；</li><li>输出 <code>PASS / FAIL</code>；</li><li>画一张速度和距离随时间变化的图。</li></ol>
+<p>这已经是智能驾驶数据自动化的一个缩小版了。</p>
+
+<h2>最后总结</h2>
+<p>智能驾驶整车测试的自动化数据处理，本质上是在做三件事：</p>
+<ol><li><strong>把不同设备产生的大量原始数据，变成统一、可信、可分析的数据；</strong></li><li><strong>把测试用例的自然语言要求，变成程序能计算的规则和指标；</strong></li><li><strong>自动从海量数据中找场景、给结论、定位问题，并支持新版本回归。</strong></li></ol>
+<p>而你最值得优先掌握的能力是：</p>
+<pre><code>测试思维
++ 智能驾驶功能理解
++ CAN/车辆信号基础
++ Python 数据处理
++ 自动化脚本与报告能力</code></pre>
+
+<h2>参考链接</h2>
+<ul><li><a href="https://github.com/carla-simulator/carla">CARLA 开源自动驾驶仿真平台（GitHub）</a></li><li><a href="https://github.com/ApolloAuto/apollo">Apollo 开源自动驾驶平台（GitHub）</a></li><li><a href="https://www.asam.net/standards/detail/openscenario-xml/">ASAM OpenSCENARIO XML 标准</a></li><li><a href="https://www.asam.net/standards/detail/opendrive/">ASAM OpenDRIVE 标准</a></li><li><a href="https://mcap.dev/">MCAP 机器人时序数据记录格式</a></li></ul>
+<p class="note">提示：此文件为独立 HTML 文档，不依赖网络即可打开和阅读；可使用 Edge、Chrome、Firefox、Safari 等浏览器打开，也可通过浏览器的“打印”功能另存为 PDF。</p>
+</article></main></body></html>
